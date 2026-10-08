@@ -1,29 +1,47 @@
 /**
- * Snake linked list implementation.
+ * Snake Doubly Linked List Implementation with Head and Tail Pointers.
  * 
- * DSA Structure: Singly Linked List
- * Head -> Node -> Node -> Node -> null
+ * DSA Structure: Doubly Linked List
+ * null <-> Head <-> Node <-> Node <-> Tail <-> null
+ * 
+ * Performance Optimizations:
+ *   - Head Insertion: O(1)
+ *   - Tail Removal:   O(1) (Optimized from O(N) by introducing tail & prev pointers)
+ *   - Tail Access:    O(1)
  */
 public class Snake {
 
     private SnakeNode head;
+    private SnakeNode tail;
     private int length;
 
     public Snake(int startX, int startY, int initialLength) {
         this.head = new SnakeNode(startX, startY);
+        this.tail = this.head;
         this.length = 1;
 
-        // Build initial body segments extending to the left
+        // Build initial body segments extending to the left with two-way links
         SnakeNode current = this.head;
         for (int i = 1; i < initialLength; i++) {
-            current.next = new SnakeNode(startX - i, startY);
-            current = current.next;
+            SnakeNode nextNode = new SnakeNode(startX - i, startY);
+            current.next = nextNode;
+            nextNode.prev = current;
+            current = nextNode;
             this.length++;
         }
+        this.tail = current; // Direct pointer to tail
     }
 
     public SnakeNode getHead() {
         return head;
+    }
+
+    /**
+     * Returns the tail node directly via tail pointer.
+     * Time Complexity: O(1) constant time
+     */
+    public SnakeNode getTail() {
+        return tail;
     }
 
     public int getLength() {
@@ -31,53 +49,56 @@ public class Snake {
     }
 
     /**
-     * Inserts a new head node at the front of the linked list.
+     * Inserts a new head node at the front of the doubly linked list.
      * Time Complexity: O(1)
      */
     public void addHead(int x, int y) {
         SnakeNode newHead = new SnakeNode(x, y);
-        newHead.next = head;
-        head = newHead;
+        if (head == null) {
+            head = newHead;
+            tail = newHead;
+        } else {
+            newHead.next = head;
+            head.prev = newHead;
+            head = newHead;
+        }
         length++;
     }
 
     /**
-     * Removes the last node (tail) of the linked list.
-     * Time Complexity: O(N)
+     * Removes the last node (tail) of the doubly linked list using the tail pointer.
+     * Time Complexity: O(1) (Instant tail unlinking without traversing)
      * 
-     * @return The removed SnakeNode (coordinates can be used to clear board cell)
+     * @return The removed SnakeNode
      */
     public SnakeNode removeTail() {
-        if (head == null) {
+        if (tail == null) {
             return null;
         }
 
-        if (head.next == null) {
-            SnakeNode removed = head;
+        SnakeNode removed = tail;
+
+        if (head == tail) {
             head = null;
-            length = 0;
-            return removed;
+            tail = null;
+        } else {
+            tail = tail.prev;
+            tail.next = null;
+            removed.prev = null;
         }
 
-        SnakeNode current = head;
-        while (current.next.next != null) {
-            current = current.next;
-        }
-
-        SnakeNode removed = current.next;
-        current.next = null;
         length--;
         return removed;
     }
 
     /**
-     * Moves the snake by prepending a new head at (head.x + dx, head.y + dy).
-     * If the snake did not eat food, the tail is removed.
+     * Moves the snake by adding a head and conditionally trimming the tail.
+     * Time Complexity: O(1)
      * 
      * @param dx change in x
      * @param dy change in y
-     * @param grow whether the snake should grow (eaten food)
-     * @return The removed tail node if not growing, or null if growing
+     * @param grow whether the snake ate food
+     * @return removed tail node if not growing, or null if growing
      */
     public SnakeNode move(int dx, int dy, boolean grow) {
         int newX = head.x + dx;
@@ -93,6 +114,7 @@ public class Snake {
 
     /**
      * Checks if the snake's head collides with any part of its body.
+     * Time Complexity: O(N)
      */
     public boolean checkSelfCollision() {
         if (head == null || head.next == null) {
@@ -110,7 +132,8 @@ public class Snake {
     }
 
     /**
-     * Checks if any node in the snake occupies the given coordinates.
+     * Checks if any node occupies the specified coordinates.
+     * Time Complexity: O(N)
      */
     public boolean contains(int x, int y) {
         SnakeNode current = head;
@@ -124,30 +147,16 @@ public class Snake {
     }
 
     /**
-     * Traverses the linked list to find the tail node.
-     * Time Complexity: O(N)
-     */
-    public SnakeNode getTail() {
-        if (head == null) {
-            return null;
-        }
-        SnakeNode current = head;
-        while (current.next != null) {
-            current = current.next;
-        }
-        return current;
-    }
-
-    /**
-     * Visualizes the Linked List state in console.
+     * Visualizes the Doubly Linked List state in console.
      */
     public void printLinkedList() {
-        System.out.print("Snake Linked List: Head");
+        System.out.print("Snake Doubly Linked List: Head");
         SnakeNode current = head;
         while (current != null) {
-            System.out.print(" -> (" + current.x + "," + current.y + ")");
+            System.out.print(" <-> (" + current.x + "," + current.y + ")");
             current = current.next;
         }
-        System.out.println(" -> null (Length: " + length + ")");
+        System.out.println(" <-> null (Tail: (" + (tail != null ? tail.x + "," + tail.y : "none")
+                + "), Length: " + length + ", Tail Removal: O(1))");
     }
 }

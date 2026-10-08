@@ -20,18 +20,17 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * GamePanel - Version 10 Final GUI with Profile Management
+ * GamePanel - Version 11 Advanced DSA Architecture
  * 
- * Features:
- *  - Main Menu
- *  - Profile Selection Screen (Select profile / Create profile with name)
- *  - Live Player Identity tracking & High Scores per profile
- *  - Leaderboard automatically updated with player names and scores via Bubble Sort
- *  - Linear Search by player name
- *  - Game View with Top Stats Header, 20x15 Board, and Bottom Control Bar
- *  - Game Over View with [PLAY AGAIN], [SWITCH PROFILE], [LEADERBOARD], [MAIN MENU]
- *  - How To Play & DSA Guide Modal
- *  - Genuine Call-Stack Recursion Countdown
+ * Data Structures & Algorithms Implemented:
+ *  1. 2D Array Grid: int[][] board (O(1) lookups)
+ *  2. Doubly Linked List with Tail Pointer: Snake (O(1) head insert, O(1) tail removal)
+ *  3. Hand-Built FIFO Queue: CustomQueue<Direction> for input buffering
+ *  4. Hand-Built LIFO Stack: CustomStack<String> for game event / score history
+ *  5. Bubble Sort Algorithm: Plain array sorting on LeaderboardEntry[] (O(N^2))
+ *  6. Linear Search Algorithm: In-Window GUI step trace display (O(N))
+ *  7. Recursive Binary Search: In-Window score search on sorted array (O(log N))
+ *  8. Call-Stack Recursion: countdown(3) -> countdown(0) and RecursionMath bonus
  */
 public class GamePanel extends JPanel implements ActionListener {
 
@@ -53,16 +52,27 @@ public class GamePanel extends JPanel implements ActionListener {
 
     private int[][] board;
 
-    // DSA 2: Singly Linked List Snake
+    // DSA 2: Doubly Linked List Snake with Tail Pointer (O(1) tail removal)
     private Snake snake;
 
-    // Food Object
+    // Food Object (Safe deterministic placement without infinite loop)
     private Food food;
 
-    // DSA 3: Bubble Sort & Leaderboard
+    // DSA 3: Hand-Built Queue for Input Buffering
+    public enum Direction { UP, DOWN, LEFT, RIGHT }
+    private CustomQueue<Direction> inputQueue = new CustomQueue<>();
+
+    // DSA 4: Hand-Built Stack for Game Event History
+    private CustomStack<String> eventStack = new CustomStack<>();
+
+    // DSA 5: Bubble Sort & Plain Array Leaderboard
     private Leaderboard leaderboard;
 
-    // DSA 4: Recursion Countdown
+    // DSA 6 & 7: Search Results Display State
+    private LinearSearch.SearchResult activeLinearResult = null;
+    private BinarySearch.SearchResult activeBinaryResult = null;
+
+    // DSA 8: Recursion Countdown
     private String countdownText = "";
 
     // Profiles Management
@@ -77,6 +87,7 @@ public class GamePanel extends JPanel implements ActionListener {
         PLAYING,
         HOW_TO_PLAY,
         LEADERBOARD,
+        SEARCH_DISPLAY,
         GAME_OVER
     }
 
@@ -85,6 +96,7 @@ public class GamePanel extends JPanel implements ActionListener {
     // Movement direction
     private int dx = 1; // Initially moving RIGHT
     private int dy = 0;
+    private Direction currentDirection = Direction.RIGHT;
 
     // Game stats & difficulty progression
     private static final int INITIAL_SPEED_MS = 140;
@@ -110,32 +122,29 @@ public class GamePanel extends JPanel implements ActionListener {
     private Point mousePoint = null;
 
     // Interactive Button Bounds
-    // Main Menu Buttons
     private final Rectangle menuPlayBtn = new Rectangle(270, 220, 260, 48);
     private final Rectangle menuLeaderboardBtn = new Rectangle(270, 285, 260, 48);
     private final Rectangle menuHowToPlayBtn = new Rectangle(270, 350, 260, 48);
     private final Rectangle menuExitBtn = new Rectangle(270, 415, 260, 48);
 
-    // Profile Selection Buttons
     private final Rectangle profileCreateBtn = new Rectangle(250, 505, 300, 46);
     private final Rectangle profileBackBtn = new Rectangle(290, 565, 220, 42);
 
-    // In-Game Bottom Bar Buttons
     private final Rectangle gamePauseBtn = new Rectangle(280, TOTAL_HEIGHT - FOOTER_HEIGHT + 7, 110, 36);
     private final Rectangle gameRestartBtn = new Rectangle(410, TOTAL_HEIGHT - FOOTER_HEIGHT + 7, 110, 36);
 
-    // Game Over Buttons
     private final Rectangle goPlayAgainBtn = new Rectangle(270, 330, 260, 42);
     private final Rectangle goSwitchProfileBtn = new Rectangle(270, 382, 260, 42);
     private final Rectangle goLeaderboardBtn = new Rectangle(270, 434, 260, 42);
     private final Rectangle goMainMenuBtn = new Rectangle(270, 486, 260, 42);
 
-    // How To Play Back Button
     private final Rectangle howBackBtn = new Rectangle(290, 565, 220, 44);
 
-    // Leaderboard Screen Buttons
-    private final Rectangle lbSearchBtn = new Rectangle(200, 565, 180, 44);
-    private final Rectangle lbBackBtn = new Rectangle(420, 565, 180, 44);
+    private final Rectangle lbSearchBtn = new Rectangle(160, 565, 150, 44);
+    private final Rectangle lbBinSearchBtn = new Rectangle(325, 565, 175, 44);
+    private final Rectangle lbBackBtn = new Rectangle(515, 565, 135, 44);
+
+    private final Rectangle searchCloseBtn = new Rectangle(300, 565, 200, 44);
 
     public GamePanel() {
         this.setPreferredSize(new Dimension(TOTAL_WIDTH, TOTAL_HEIGHT));
@@ -144,15 +153,13 @@ public class GamePanel extends JPanel implements ActionListener {
 
         board = new int[GRID_HEIGHT][GRID_WIDTH];
 
-        // Initialize Profiles with default players
         initProfiles();
 
-        // Initialize Leaderboard & demonstrate algorithms in terminal
+        // Plain array Leaderboard with Bubble Sort & Search demonstrations
         leaderboard = new Leaderboard();
         leaderboard.demonstrateBubbleSort();
-        leaderboard.demonstrateLinearSearch();
+        leaderboard.demonstrateSearchAlgorithms();
 
-        // Keyboard controls
         this.addKeyListener(new KeyAdapter() {
             @Override
             public void keyPressed(KeyEvent e) {
@@ -160,7 +167,6 @@ public class GamePanel extends JPanel implements ActionListener {
             }
         });
 
-        // Mouse clicks
         this.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
@@ -168,7 +174,6 @@ public class GamePanel extends JPanel implements ActionListener {
             }
         });
 
-        // Mouse motion for hover highlights
         this.addMouseMotionListener(new MouseMotionAdapter() {
             @Override
             public void mouseMoved(MouseEvent e) {
@@ -180,28 +185,27 @@ public class GamePanel extends JPanel implements ActionListener {
 
         initGameData();
 
-        // Game loop timer
         gameTimer = new Timer(currentSpeed, this);
     }
 
-    /**
-     * Initializes default user profiles matching the sample dataset.
-     */
     private void initProfiles() {
         profiles.add(new Profile("Damidu", 850));
         profiles.add(new Profile("Amal", 950));
         profiles.add(new Profile("Nimal", 650));
         profiles.add(new Profile("Kasun", 400));
-        currentProfile = profiles.get(0); // Default to Damidu
+        currentProfile = profiles.get(0);
     }
 
-    /**
-     * Initializes gameplay structures without launching movement.
-     */
     public void initGameData() {
+        // Doubly Linked List with tail pointer
         snake = new Snake(6, 7, 3);
         dx = 1;
         dy = 0;
+        currentDirection = Direction.RIGHT;
+        inputQueue.clear();
+        eventStack.clear();
+        eventStack.push("Round Initialized");
+
         isPaused = false;
         collisionType = "";
         collisionDetails = "";
@@ -224,20 +228,14 @@ public class GamePanel extends JPanel implements ActionListener {
         syncBoard();
     }
 
-    /**
-     * Selects a profile and initiates the recursive countdown into gameplay.
-     */
     public void selectProfileAndPlay(Profile profile) {
         this.currentProfile = profile;
         this.highScore = profile.getHighScore();
-        System.out.println(">> Active Profile Selected: " + currentProfile.getName()
+        System.out.println(">> Active Profile: " + currentProfile.getName()
                 + " (Personal Best: " + currentProfile.getHighScore() + " pts)");
         startWithRecursiveCountdown();
     }
 
-    /**
-     * Triggers the genuine Recursive Countdown (3 -> 2 -> 1 -> GO!) and then starts playing.
-     */
     public void startWithRecursiveCountdown() {
         initGameData();
         currentState = ScreenState.COUNTDOWN;
@@ -265,9 +263,6 @@ public class GamePanel extends JPanel implements ActionListener {
         countdown.start(3);
     }
 
-    /**
-     * Synchronizes 2D Array DSA from Linked List & Food.
-     */
     private void syncBoard() {
         for (int r = 0; r < GRID_HEIGHT; r++) {
             for (int c = 0; c < GRID_WIDTH; c++) {
@@ -289,9 +284,6 @@ public class GamePanel extends JPanel implements ActionListener {
         }
     }
 
-    /**
-     * Updates cursor to hand if hovering over any interactive button or profile card.
-     */
     private void updateCursor() {
         if (mousePoint == null) {
             setCursor(Cursor.getDefaultCursor());
@@ -324,7 +316,12 @@ public class GamePanel extends JPanel implements ActionListener {
                 hoveringButton = howBackBtn.contains(mousePoint);
                 break;
             case LEADERBOARD:
-                hoveringButton = lbSearchBtn.contains(mousePoint) || lbBackBtn.contains(mousePoint);
+                hoveringButton = lbSearchBtn.contains(mousePoint)
+                        || lbBinSearchBtn.contains(mousePoint)
+                        || lbBackBtn.contains(mousePoint);
+                break;
+            case SEARCH_DISPLAY:
+                hoveringButton = searchCloseBtn.contains(mousePoint);
                 break;
             default:
                 break;
@@ -333,9 +330,6 @@ public class GamePanel extends JPanel implements ActionListener {
         setCursor(hoveringButton ? Cursor.getPredefinedCursor(Cursor.HAND_CURSOR) : Cursor.getDefaultCursor());
     }
 
-    /**
-     * Computes index of profile card clicked on SELECT_PROFILE screen.
-     */
     private int getClickedProfileIndex(Point p) {
         int startY = 140;
         int cardH = 50;
@@ -352,9 +346,6 @@ public class GamePanel extends JPanel implements ActionListener {
         return -1;
     }
 
-    /**
-     * Handles mouse clicks across all screens.
-     */
     private void handleMouseClick(Point p) {
         switch (currentState) {
             case MAIN_MENU:
@@ -417,9 +408,18 @@ public class GamePanel extends JPanel implements ActionListener {
 
             case LEADERBOARD:
                 if (lbSearchBtn.contains(p)) {
-                    performLinearSearch();
+                    promptLinearSearchGUI();
+                } else if (lbBinSearchBtn.contains(p)) {
+                    promptBinarySearchGUI();
                 } else if (lbBackBtn.contains(p)) {
                     currentState = ScreenState.MAIN_MENU;
+                    repaint();
+                }
+                break;
+
+            case SEARCH_DISPLAY:
+                if (searchCloseBtn.contains(p)) {
+                    currentState = ScreenState.LEADERBOARD;
                     repaint();
                 }
                 break;
@@ -429,9 +429,6 @@ public class GamePanel extends JPanel implements ActionListener {
         }
     }
 
-    /**
-     * Prompts the user to create a new profile with their name.
-     */
     private void promptCreateProfile() {
         String name = JOptionPane.showInputDialog(
             this,
@@ -442,8 +439,6 @@ public class GamePanel extends JPanel implements ActionListener {
 
         if (name != null && !name.trim().isEmpty()) {
             name = name.trim();
-
-            // Check if profile with same name exists
             for (Profile p : profiles) {
                 if (p.getName().equalsIgnoreCase(name)) {
                     JOptionPane.showMessageDialog(this,
@@ -455,7 +450,6 @@ public class GamePanel extends JPanel implements ActionListener {
                 }
             }
 
-            // Create new profile
             Profile newProfile = new Profile(name, 0);
             profiles.add(newProfile);
             System.out.println(">> Created new Profile: " + name);
@@ -463,9 +457,6 @@ public class GamePanel extends JPanel implements ActionListener {
         }
     }
 
-    /**
-     * Handles keyboard controls.
-     */
     private void handleKeyPress(int keyCode) {
         if (currentState == ScreenState.MAIN_MENU) {
             if (keyCode == KeyEvent.VK_ENTER || keyCode == KeyEvent.VK_SPACE) {
@@ -496,12 +487,30 @@ public class GamePanel extends JPanel implements ActionListener {
             return;
         }
 
-        if (currentState == ScreenState.HOW_TO_PLAY || currentState == ScreenState.LEADERBOARD) {
+        if (currentState == ScreenState.HOW_TO_PLAY) {
             if (keyCode == KeyEvent.VK_ESCAPE || keyCode == KeyEvent.VK_BACK_SPACE || keyCode == KeyEvent.VK_M) {
                 currentState = ScreenState.MAIN_MENU;
                 repaint();
-            } else if (keyCode == KeyEvent.VK_F && currentState == ScreenState.LEADERBOARD) {
-                performLinearSearch();
+            }
+            return;
+        }
+
+        if (currentState == ScreenState.LEADERBOARD) {
+            if (keyCode == KeyEvent.VK_ESCAPE || keyCode == KeyEvent.VK_BACK_SPACE || keyCode == KeyEvent.VK_M) {
+                currentState = ScreenState.MAIN_MENU;
+                repaint();
+            } else if (keyCode == KeyEvent.VK_F) {
+                promptLinearSearchGUI();
+            } else if (keyCode == KeyEvent.VK_B) {
+                promptBinarySearchGUI();
+            }
+            return;
+        }
+
+        if (currentState == ScreenState.SEARCH_DISPLAY) {
+            if (keyCode == KeyEvent.VK_ESCAPE || keyCode == KeyEvent.VK_ENTER || keyCode == KeyEvent.VK_SPACE) {
+                currentState = ScreenState.LEADERBOARD;
+                repaint();
             }
             return;
         }
@@ -541,33 +550,26 @@ public class GamePanel extends JPanel implements ActionListener {
                 return;
             }
 
-            // Movement controls
-            if ((keyCode == KeyEvent.VK_W || keyCode == KeyEvent.VK_UP) && dy != 1) {
-                dx = 0;
-                dy = -1;
-            } else if ((keyCode == KeyEvent.VK_S || keyCode == KeyEvent.VK_DOWN) && dy != -1) {
-                dx = 0;
-                dy = 1;
-            } else if ((keyCode == KeyEvent.VK_A || keyCode == KeyEvent.VK_LEFT) && dx != 1) {
-                dx = -1;
-                dy = 0;
-            } else if ((keyCode == KeyEvent.VK_D || keyCode == KeyEvent.VK_RIGHT) && dx != -1) {
-                dx = 1;
-                dy = 0;
+            // Enqueue inputs into CustomQueue<Direction>
+            // Prevents direction reversals and buffers fast turns!
+            if (inputQueue.size() < 3) {
+                if ((keyCode == KeyEvent.VK_W || keyCode == KeyEvent.VK_UP)) {
+                    inputQueue.enqueue(Direction.UP);
+                } else if ((keyCode == KeyEvent.VK_S || keyCode == KeyEvent.VK_DOWN)) {
+                    inputQueue.enqueue(Direction.DOWN);
+                } else if ((keyCode == KeyEvent.VK_A || keyCode == KeyEvent.VK_LEFT)) {
+                    inputQueue.enqueue(Direction.LEFT);
+                } else if ((keyCode == KeyEvent.VK_D || keyCode == KeyEvent.VK_RIGHT)) {
+                    inputQueue.enqueue(Direction.RIGHT);
+                }
             }
         }
     }
 
     /**
-     * Prompts for player name and runs Linear Search algorithm.
+     * Prompts for player name and displays the step trace inside the GUI window.
      */
-    private void performLinearSearch() {
-        boolean wasPlaying = (currentState == ScreenState.PLAYING && !isPaused);
-        if (wasPlaying) {
-            isPaused = true;
-            repaint();
-        }
-
+    private void promptLinearSearchGUI() {
         String query = JOptionPane.showInputDialog(
             this,
             "Enter Player Name to Search (Linear Search DSA):",
@@ -576,39 +578,55 @@ public class GamePanel extends JPanel implements ActionListener {
         );
 
         if (query != null && !query.trim().isEmpty()) {
-            LeaderboardEntry found = leaderboard.searchPlayer(query.trim());
-            if (found != null) {
-                JOptionPane.showMessageDialog(
-                    this,
-                    "<html><h3 style='color:#27ae60;'>Player Found!</h3>"
-                    + "<b>Player:</b> " + found.getName() + "<br>"
-                    + "<b>Score:</b> " + found.getScore() + "<br><br>"
-                    + "<i>Algorithm: Linear Search O(N) traversal</i></html>",
-                    "Linear Search Result",
-                    JOptionPane.INFORMATION_MESSAGE
-                );
-            } else {
-                JOptionPane.showMessageDialog(
-                    this,
-                    "<html><h3 style='color:#e74c3c;'>Player Not Found</h3>"
-                    + "Player <b>" + query.trim() + "</b> was not found on the leaderboard.<br><br>"
-                    + "<i>All entries were checked sequentially via Linear Search.</i></html>",
-                    "Linear Search Result",
-                    JOptionPane.WARNING_MESSAGE
-                );
+            activeLinearResult = leaderboard.searchPlayer(query.trim());
+            activeBinaryResult = null;
+            currentState = ScreenState.SEARCH_DISPLAY;
+            repaint();
+        }
+    }
+
+    /**
+     * Prompts for score and displays Recursive Binary Search step trace in the GUI window.
+     */
+    private void promptBinarySearchGUI() {
+        String scoreStr = JOptionPane.showInputDialog(
+            this,
+            "Enter Target Score to Search (Recursive Binary Search DSA):",
+            "Recursive Binary Search",
+            JOptionPane.QUESTION_MESSAGE
+        );
+
+        if (scoreStr != null && !scoreStr.trim().isEmpty()) {
+            try {
+                int target = Integer.parseInt(scoreStr.trim());
+                activeBinaryResult = leaderboard.searchByScore(target);
+                activeLinearResult = null;
+                currentState = ScreenState.SEARCH_DISPLAY;
+                repaint();
+            } catch (NumberFormatException e) {
+                JOptionPane.showMessageDialog(this, "Please enter a valid numeric score.", "Invalid Input", JOptionPane.ERROR_MESSAGE);
             }
         }
-
-        if (wasPlaying) {
-            isPaused = false;
-        }
-        repaint();
     }
 
     @Override
     public void actionPerformed(ActionEvent e) {
         if (currentState != ScreenState.PLAYING || isPaused) {
             return;
+        }
+
+        // Process buffered direction from CustomQueue
+        while (!inputQueue.isEmpty()) {
+            Direction nextDir = inputQueue.dequeue();
+            if (nextDir == Direction.UP && currentDirection != Direction.DOWN) {
+                dx = 0; dy = -1; currentDirection = Direction.UP; break;
+            } else if (nextDir == Direction.DOWN && currentDirection != Direction.UP) {
+                dx = 0; dy = 1; currentDirection = Direction.DOWN; break;
+            } else if (nextDir == Direction.LEFT && currentDirection != Direction.RIGHT) {
+                dx = -1; dy = 0; currentDirection = Direction.LEFT; break;
+            } else if (nextDir == Direction.RIGHT && currentDirection != Direction.LEFT) {
+                dx = 1; dy = 0; currentDirection = Direction.RIGHT; break;
+            }
         }
 
         SnakeNode head = snake.getHead();
@@ -632,10 +650,10 @@ public class GamePanel extends JPanel implements ActionListener {
             return;
         }
 
-        // Move Linked List Snake
+        // Move Doubly Linked List Snake with O(1) tail removal
         snake.move(dx, dy, willGrow);
 
-        // 3. Self Collision Check via Linked List
+        // 3. Self Collision Check via Doubly Linked List
         if (snake.checkSelfCollision()) {
             triggerCollision("SELF COLLISION", "Linked List traversal detected overlap");
             return;
@@ -643,7 +661,12 @@ public class GamePanel extends JPanel implements ActionListener {
 
         // Food eaten
         if (willGrow) {
-            score += food.getPoints();
+            // Second recursive function: RecursionMath calculates points recursively
+            int earnedPoints = RecursionMath.calculateScoreBonus(snake.getLength());
+            score += earnedPoints;
+
+            eventStack.push("Ate Food: +" + earnedPoints + " pts (Length: " + snake.getLength() + ")");
+
             if (currentProfile != null && score > currentProfile.getHighScore()) {
                 isNewHighScore = true;
                 highScore = score;
@@ -655,13 +678,34 @@ public class GamePanel extends JPanel implements ActionListener {
                 currentSpeed = Math.max(MIN_SPEED_MS, currentSpeed - SPEED_DECREMENT_MS);
                 gameTimer.setDelay(currentSpeed);
                 level++;
+                eventStack.push("Level Up -> Level " + level + " (" + currentSpeed + "ms)");
             }
 
-            food.respawn(GRID_WIDTH, GRID_HEIGHT, snake);
+            // Safe deterministic food placement
+            boolean placed = food.respawn(GRID_WIDTH, GRID_HEIGHT, snake);
+            if (!placed) {
+                // 100% board filled -> Game Won!
+                triggerGameWon();
+                return;
+            }
+
             snake.printLinkedList();
         }
 
         syncBoard();
+        repaint();
+    }
+
+    private void triggerGameWon() {
+        currentState = ScreenState.GAME_OVER;
+        collisionType = "VICTORY! BOARD 100% FILLED";
+        collisionDetails = "Maximum possible snake length achieved (" + (GRID_WIDTH * GRID_HEIGHT) + " tiles)";
+        gameTimer.stop();
+
+        if (currentProfile != null) {
+            currentProfile.updateHighScore(score);
+            leaderboard.recordScore(currentProfile.getName(), score);
+        }
         repaint();
     }
 
@@ -674,7 +718,8 @@ public class GamePanel extends JPanel implements ActionListener {
             gameTimer.stop();
         }
 
-        // Update profile record and Leaderboard
+        eventStack.push("Crash: " + type);
+
         if (currentProfile != null) {
             currentProfile.incrementGamesPlayed();
             if (currentProfile.updateHighScore(score)) {
@@ -685,7 +730,7 @@ public class GamePanel extends JPanel implements ActionListener {
             if (score > 0) {
                 leaderboard.recordScore(currentProfile.getName(), score);
                 System.out.println(">> Leaderboard updated with player '" + currentProfile.getName()
-                        + "' and score " + score + " (Bubble Sorted)");
+                        + "' and score " + score + " (Bubble Sorted Plain Array)");
             }
         }
 
@@ -726,12 +771,12 @@ public class GamePanel extends JPanel implements ActionListener {
             case LEADERBOARD:
                 drawLeaderboardScreen(g);
                 break;
+            case SEARCH_DISPLAY:
+                drawSearchDisplayScreen(g);
+                break;
         }
     }
 
-    /**
-     * Renders the game board, top HUD bar, and bottom control bar.
-     */
     private void drawGameBoard(Graphics g) {
         // --- 1. Top HUD Header Bar ---
         g.setColor(new Color(16, 18, 23));
@@ -741,28 +786,22 @@ public class GamePanel extends JPanel implements ActionListener {
 
         g.setFont(new Font("SansSerif", Font.BOLD, 14));
 
-        // Player Name
         g.setColor(new Color(155, 89, 182));
         String pName = (currentProfile != null) ? currentProfile.getName() : "Player";
         g.drawString("👤 " + pName, 20, 27);
 
-        // Score
         g.setColor(new Color(240, 240, 240));
         g.drawString("SCORE: " + score, 180, 27);
 
-        // Level
         g.setColor(new Color(52, 152, 219));
         g.drawString("LEVEL: " + level, 330, 27);
 
-        // High Score
         g.setColor(new Color(241, 196, 15));
         g.drawString("BEST: " + highScore, 460, 27);
 
-        // Length
         g.setColor(new Color(46, 204, 113));
         g.drawString("LENGTH: " + (snake != null ? snake.getLength() : 3), 580, 27);
 
-        // Speed
         g.setColor(new Color(160, 170, 185));
         g.setFont(new Font("SansSerif", Font.PLAIN, 12));
         g.drawString("SPEED: " + currentSpeed + "ms", 695, 27);
@@ -770,7 +809,6 @@ public class GamePanel extends JPanel implements ActionListener {
         // --- 2. Board Grid Area ---
         int boardOffsetY = HEADER_HEIGHT;
 
-        // Grid lines
         g.setColor(new Color(32, 36, 45));
         for (int r = 0; r <= GRID_HEIGHT; r++) {
             g.drawLine(0, boardOffsetY + r * CELL_SIZE, TOTAL_WIDTH, boardOffsetY + r * CELL_SIZE);
@@ -779,20 +817,10 @@ public class GamePanel extends JPanel implements ActionListener {
             g.drawLine(c * CELL_SIZE, boardOffsetY, c * CELL_SIZE, boardOffsetY + GRID_HEIGHT * CELL_SIZE);
         }
 
-        // Food
         if (food != null) {
-            int px = food.getX() * CELL_SIZE;
-            int py = boardOffsetY + food.getY() * CELL_SIZE;
-
-            g.setColor(new Color(231, 76, 60));
-            g.fillOval(px + 5, py + 5, CELL_SIZE - 10, CELL_SIZE - 10);
-            g.setColor(new Color(241, 148, 138));
-            g.fillOval(px + 10, py + 9, (CELL_SIZE - 10) / 3, (CELL_SIZE - 10) / 3);
-            g.setColor(new Color(46, 204, 113));
-            g.fillRect(px + (CELL_SIZE / 2) - 2, py + 3, 4, 5);
+            food.draw(g, CELL_SIZE, boardOffsetY);
         }
 
-        // Snake
         if (snake != null) {
             SnakeNode current = snake.getHead();
             boolean isHead = true;
@@ -805,7 +833,6 @@ public class GamePanel extends JPanel implements ActionListener {
                     g.setColor(currentState == ScreenState.GAME_OVER ? new Color(231, 76, 60) : new Color(46, 204, 113));
                     g.fillRoundRect(px + 3, py + 3, CELL_SIZE - 6, CELL_SIZE - 6, 12, 12);
 
-                    // Snake eyes
                     g.setColor(Color.WHITE);
                     int eyeSize = 6;
                     int eyeOffset1 = 10;
@@ -853,54 +880,41 @@ public class GamePanel extends JPanel implements ActionListener {
         g.drawLine(0, footerY, TOTAL_WIDTH, footerY);
 
         g.setColor(new Color(140, 150, 165));
-        g.setFont(new Font("SansSerif", Font.PLAIN, 13));
-        g.drawString("W/A/S/D to Steer", 30, footerY + 31);
-        g.drawString("[M] Menu", TOTAL_WIDTH - 100, footerY + 31);
+        g.setFont(new Font("SansSerif", Font.PLAIN, 12));
+        g.drawString("Queue Buffer: " + inputQueue.size() + " inputs", 25, footerY + 30);
+        g.drawString("[M] Menu", TOTAL_WIDTH - 90, footerY + 30);
 
-        // Control Buttons
         drawButton(g, gamePauseBtn, isPaused ? "▶ RESUME" : "❚❚ PAUSE",
                 new Color(52, 73, 94), new Color(70, 95, 120), Color.WHITE, 13);
         drawButton(g, gameRestartBtn, "⟳ RESTART",
                 new Color(192, 57, 43), new Color(231, 76, 60), Color.WHITE, 13);
     }
 
-    /**
-     * Screen 1: Main Menu
-     */
     private void drawMainMenuScreen(Graphics g) {
         g.setColor(new Color(15, 17, 22));
         g.fillRect(0, 0, TOTAL_WIDTH, TOTAL_HEIGHT);
 
-        // Background subtle grid decoration
         g.setColor(new Color(25, 28, 36));
-        for (int i = 0; i < TOTAL_WIDTH; i += 40) {
-            g.drawLine(i, 0, i, TOTAL_HEIGHT);
-        }
-        for (int j = 0; j < TOTAL_HEIGHT; j += 40) {
-            g.drawLine(0, j, TOTAL_WIDTH, j);
-        }
+        for (int i = 0; i < TOTAL_WIDTH; i += 40) g.drawLine(i, 0, i, TOTAL_HEIGHT);
+        for (int j = 0; j < TOTAL_HEIGHT; j += 40) g.drawLine(0, j, TOTAL_WIDTH, j);
 
-        // Title Box Card
         g.setColor(new Color(22, 26, 35, 240));
         g.fillRoundRect(160, 40, 480, 135, 20, 20);
         g.setColor(new Color(45, 55, 72));
         g.drawRoundRect(160, 40, 480, 135, 20, 20);
 
-        // Title
         g.setColor(new Color(46, 204, 113));
         g.setFont(new Font("SansSerif", Font.BOLD, 48));
         String title = "🐍 SNAKE DSA";
         int tw = g.getFontMetrics().stringWidth(title);
         g.drawString(title, (TOTAL_WIDTH - tw) / 2, 105);
 
-        // Subtitle
         g.setColor(new Color(180, 190, 205));
         g.setFont(new Font("SansSerif", Font.PLAIN, 15));
         String sub = "Interactive Data Structures & Algorithms Mini Game";
         int sw = g.getFontMetrics().stringWidth(sub);
         g.drawString(sub, (TOTAL_WIDTH - sw) / 2, 145);
 
-        // Menu Buttons
         drawButton(g, menuPlayBtn, "▶ PLAY GAME",
                 new Color(39, 174, 96), new Color(46, 204, 113), Color.WHITE, 17);
 
@@ -913,7 +927,6 @@ public class GamePanel extends JPanel implements ActionListener {
         drawButton(g, menuExitBtn, "✕ EXIT",
                 new Color(44, 62, 80), new Color(52, 73, 94), Color.WHITE, 17);
 
-        // Active Player info if selected
         if (currentProfile != null) {
             g.setColor(new Color(155, 89, 182));
             g.setFont(new Font("SansSerif", Font.BOLD, 14));
@@ -922,17 +935,13 @@ public class GamePanel extends JPanel implements ActionListener {
             g.drawString(ap, (TOTAL_WIDTH - apw) / 2, 490);
         }
 
-        // Bottom Footer
         g.setColor(new Color(130, 140, 155));
         g.setFont(new Font("SansSerif", Font.PLAIN, 13));
-        String dsaInfo = "Powered by: 2D Array • Linked List • Bubble Sort • Linear Search • Recursion";
+        String dsaInfo = "Doubly Linked List (O(1) tail) • Queue • Stack • Bubble Sort • Binary & Linear Search • Recursion";
         int dw = g.getFontMetrics().stringWidth(dsaInfo);
         g.drawString(dsaInfo, (TOTAL_WIDTH - dw) / 2, TOTAL_HEIGHT - 35);
     }
 
-    /**
-     * Screen: Select / Create Profile
-     */
     private void drawProfileSelectionScreen(Graphics g) {
         g.setColor(new Color(15, 17, 22));
         g.fillRect(0, 0, TOTAL_WIDTH, TOTAL_HEIGHT);
@@ -947,14 +956,12 @@ public class GamePanel extends JPanel implements ActionListener {
         g.setColor(new Color(50, 60, 80));
         g.drawRoundRect(cardX, cardY, cardW, cardH, 20, 20);
 
-        // Header Title
         g.setColor(new Color(46, 204, 113));
         g.setFont(new Font("SansSerif", Font.BOLD, 28));
         String title = "👤 SELECT YOUR PROFILE";
         int tw = g.getFontMetrics().stringWidth(title);
         g.drawString(title, cardX + (cardW - tw) / 2, cardY + 45);
 
-        // Subtitle
         g.setColor(new Color(170, 180, 195));
         g.setFont(new Font("SansSerif", Font.PLAIN, 14));
         String sub = "Click your profile to start, or create a new one to join!";
@@ -964,7 +971,6 @@ public class GamePanel extends JPanel implements ActionListener {
         g.setColor(new Color(45, 55, 75));
         g.drawLine(cardX + 30, cardY + 88, cardX + cardW - 30, cardY + 88);
 
-        // Profile Cards List
         int startY = 140;
         int pCardH = 50;
         int gap = 10;
@@ -978,7 +984,6 @@ public class GamePanel extends JPanel implements ActionListener {
             boolean isHovered = (mousePoint != null && rect.contains(mousePoint));
             boolean isSelected = (currentProfile != null && currentProfile.getName().equals(prof.getName()));
 
-            // Card body
             if (isSelected) {
                 g.setColor(new Color(39, 174, 96, 60));
             } else if (isHovered) {
@@ -988,7 +993,6 @@ public class GamePanel extends JPanel implements ActionListener {
             }
             g.fillRoundRect(rect.x, rect.y, rect.width, rect.height, 12, 12);
 
-            // Card border
             if (isSelected) {
                 g.setColor(new Color(46, 204, 113));
             } else if (isHovered) {
@@ -998,12 +1002,10 @@ public class GamePanel extends JPanel implements ActionListener {
             }
             g.drawRoundRect(rect.x, rect.y, rect.width, rect.height, 12, 12);
 
-            // Avatar & Name
             g.setFont(new Font("SansSerif", Font.BOLD, 17));
             g.setColor(Color.WHITE);
             g.drawString("👤 " + prof.getName(), rect.x + 20, rect.y + 32);
 
-            // High Score
             g.setFont(new Font("SansSerif", Font.BOLD, 14));
             g.setColor(new Color(241, 196, 15));
             String hsStr = "Best: " + prof.getHighScore() + " pts";
@@ -1011,7 +1013,6 @@ public class GamePanel extends JPanel implements ActionListener {
             g.drawString(hsStr, rect.x + rect.width - 25 - hsw, rect.y + 32);
         }
 
-        // Action Buttons
         drawButton(g, profileCreateBtn, "+ CREATE NEW PROFILE",
                 new Color(39, 174, 96), new Color(46, 204, 113), Color.WHITE, 15);
 
@@ -1019,11 +1020,7 @@ public class GamePanel extends JPanel implements ActionListener {
                 new Color(52, 73, 94), new Color(70, 95, 120), Color.WHITE, 14);
     }
 
-    /**
-     * Screen 3: Game Over Screen
-     */
     private void drawGameOverScreen(Graphics g) {
-        // Dark backdrop
         g.setColor(new Color(0, 0, 0, 215));
         g.fillRect(0, 0, TOTAL_WIDTH, TOTAL_HEIGHT);
 
@@ -1032,26 +1029,22 @@ public class GamePanel extends JPanel implements ActionListener {
         int cardX = (TOTAL_WIDTH - cardW) / 2;
         int cardY = 85;
 
-        // Card container
         g.setColor(new Color(24, 28, 38));
         g.fillRoundRect(cardX, cardY, cardW, cardH, 20, 20);
         g.setColor(new Color(50, 60, 80));
         g.drawRoundRect(cardX, cardY, cardW, cardH, 20, 20);
 
-        // Title
         g.setColor(new Color(231, 76, 60));
         g.setFont(new Font("SansSerif", Font.BOLD, 40));
         String title = "GAME OVER";
         int tw = g.getFontMetrics().stringWidth(title);
         g.drawString(title, cardX + (cardW - tw) / 2, cardY + 50);
 
-        // Collision diagnostics
         g.setColor(new Color(241, 196, 15));
         g.setFont(new Font("SansSerif", Font.PLAIN, 13));
         int cdw = g.getFontMetrics().stringWidth(collisionDetails);
         g.drawString(collisionDetails, cardX + (cardW - cdw) / 2, cardY + 78);
 
-        // Player Name & Score
         g.setColor(new Color(155, 89, 182));
         g.setFont(new Font("SansSerif", Font.BOLD, 17));
         String pName = "PLAYER: " + ((currentProfile != null) ? currentProfile.getName() : "Player");
@@ -1064,7 +1057,6 @@ public class GamePanel extends JPanel implements ActionListener {
         int scw = g.getFontMetrics().stringWidth(scoreStr);
         g.drawString(scoreStr, cardX + (cardW - scw) / 2, cardY + 155);
 
-        // High Score indicator
         if (isNewHighScore && score > 0) {
             g.setColor(new Color(241, 196, 15));
             g.setFont(new Font("SansSerif", Font.BOLD, 18));
@@ -1079,7 +1071,6 @@ public class GamePanel extends JPanel implements ActionListener {
             g.drawString(hsStr, cardX + (cardW - hsw) / 2, cardY + 190);
         }
 
-        // Action Buttons
         drawButton(g, goPlayAgainBtn, "⟳ PLAY AGAIN",
                 new Color(39, 174, 96), new Color(46, 204, 113), Color.WHITE, 15);
 
@@ -1093,124 +1084,115 @@ public class GamePanel extends JPanel implements ActionListener {
                 new Color(52, 73, 94), new Color(70, 95, 120), Color.WHITE, 15);
     }
 
-    /**
-     * How To Play & DSA Guide Screen
-     */
     private void drawHowToPlayScreen(Graphics g) {
         g.setColor(new Color(15, 17, 22));
         g.fillRect(0, 0, TOTAL_WIDTH, TOTAL_HEIGHT);
 
-        int cardW = 600;
-        int cardH = 550;
+        int cardW = 660;
+        int cardH = 570;
         int cardX = (TOTAL_WIDTH - cardW) / 2;
-        int cardY = 60;
+        int cardY = 50;
 
         g.setColor(new Color(24, 28, 38));
         g.fillRoundRect(cardX, cardY, cardW, cardH, 20, 20);
         g.setColor(new Color(50, 60, 80));
         g.drawRoundRect(cardX, cardY, cardW, cardH, 20, 20);
 
-        // Title
         g.setColor(new Color(155, 89, 182));
-        g.setFont(new Font("SansSerif", Font.BOLD, 30));
-        String title = "HOW TO PLAY & DSA GUIDE";
+        g.setFont(new Font("SansSerif", Font.BOLD, 28));
+        String title = "HOW TO PLAY & DSA ARCHITECTURE GUIDE";
         int tw = g.getFontMetrics().stringWidth(title);
-        g.drawString(title, cardX + (cardW - tw) / 2, cardY + 45);
+        g.drawString(title, cardX + (cardW - tw) / 2, cardY + 40);
 
-        // Divider
         g.setColor(new Color(45, 55, 75));
-        g.drawLine(cardX + 30, cardY + 65, cardX + cardW - 30, cardY + 65);
+        g.drawLine(cardX + 30, cardY + 58, cardX + cardW - 30, cardY + 58);
 
-        // Content
-        g.setFont(new Font("SansSerif", Font.BOLD, 15));
+        g.setFont(new Font("SansSerif", Font.BOLD, 14));
         g.setColor(new Color(241, 196, 15));
-        g.drawString("🎮 CONTROLS & PROFILES:", cardX + 40, cardY + 98);
+        g.drawString("🎮 CONTROLS & GAMEPLAY:", cardX + 35, cardY + 84);
 
-        g.setFont(new Font("SansSerif", Font.PLAIN, 14));
+        g.setFont(new Font("SansSerif", Font.PLAIN, 13));
         g.setColor(Color.WHITE);
-        g.drawString("• W / ↑ : Move Up       • S / ↓ : Move Down", cardX + 50, cardY + 125);
-        g.drawString("• A / ← : Move Left     • D / → : Move Right", cardX + 50, cardY + 148);
-        g.drawString("• Choose or create your profile to record personal high scores!", cardX + 50, cardY + 171);
+        g.drawString("• W/A/S/D or Arrows: Steer  |  Space: Pause  |  R: Restart  |  F: Search", cardX + 45, cardY + 106);
 
-        g.setFont(new Font("SansSerif", Font.BOLD, 15));
+        g.setFont(new Font("SansSerif", Font.BOLD, 14));
         g.setColor(new Color(46, 204, 113));
-        g.drawString("📚 DATA STRUCTURES & ALGORITHMS IMPLEMENTATION:", cardX + 40, cardY + 215);
+        g.drawString("📚 COMPREHENSIVE DATA STRUCTURES & ALGORITHMS (6 CORE COMPONENTS):", cardX + 35, cardY + 138);
 
-        g.setFont(new Font("SansSerif", Font.PLAIN, 14));
+        g.setFont(new Font("SansSerif", Font.PLAIN, 13));
         g.setColor(new Color(220, 225, 235));
-        g.drawString("1. 2D Array Grid (int[][] board):", cardX + 50, cardY + 242);
-        g.setColor(new Color(170, 180, 195));
-        g.drawString("   Represents the 20x15 grid (0=Empty, 1=Snake, 2=Food) with O(1) lookups.", cardX + 65, cardY + 263);
 
-        g.setColor(new Color(220, 225, 235));
-        g.drawString("2. Singly Linked List (SnakeNode & Snake):", cardX + 50, cardY + 292);
+        g.drawString("1. 2D Array Grid (int[][] board):", cardX + 45, cardY + 162);
         g.setColor(new Color(170, 180, 195));
-        g.drawString("   Dynamic head insertion O(1) & tail deletion for flexible snake growth.", cardX + 65, cardY + 313);
+        g.drawString("   20x15 coordinate system with O(1) state verification (0=Empty, 1=Snake, 2=Food).", cardX + 60, cardY + 180);
 
         g.setColor(new Color(220, 225, 235));
-        g.drawString("3. Bubble Sort Algorithm (BubbleSort.java):", cardX + 50, cardY + 342);
+        g.drawString("2. Doubly Linked List with Tail Pointer (Snake.java):", cardX + 45, cardY + 206);
         g.setColor(new Color(170, 180, 195));
-        g.drawString("   Sorts leaderboard scores in descending order (highest score first).", cardX + 65, cardY + 363);
+        g.drawString("   Upgraded with tail and prev pointers: O(1) head insertion and O(1) tail removal!", cardX + 60, cardY + 224);
 
         g.setColor(new Color(220, 225, 235));
-        g.drawString("4. Linear Search Algorithm (LinearSearch.java):", cardX + 50, cardY + 392);
+        g.drawString("3. Hand-Built FIFO Queue (CustomQueue<Direction>):", cardX + 45, cardY + 250);
         g.setColor(new Color(170, 180, 195));
-        g.drawString("   Searches players by name sequentially across the leaderboard in O(N).", cardX + 65, cardY + 413);
+        g.drawString("   Input Buffer Queue prevents dropped keystrokes during rapid turning (enqueue/dequeue O(1)).", cardX + 60, cardY + 268);
 
         g.setColor(new Color(220, 225, 235));
-        g.drawString("5. Recursion (RecursionCountdown.java):", cardX + 50, cardY + 442);
+        g.drawString("4. Hand-Built LIFO Stack (CustomStack<String>):", cardX + 45, cardY + 294);
         g.setColor(new Color(170, 180, 195));
-        g.drawString("   countdown(3) -> countdown(2) -> countdown(1) -> countdown(0) [Base Case].", cardX + 65, cardY + 463);
+        g.drawString("   Action & Score Event History Stack (push/pop O(1)) tracking all milestones.", cardX + 60, cardY + 312);
 
-        // Back Button
+        g.setColor(new Color(220, 225, 235));
+        g.drawString("5. Bubble Sort on Plain Arrays (BubbleSort.java):", cardX + 45, cardY + 338);
+        g.setColor(new Color(170, 180, 195));
+        g.drawString("   Operates on LeaderboardEntry[] plain array (O(N^2) descending sort, no java.util.List).", cardX + 60, cardY + 356);
+
+        g.setColor(new Color(220, 225, 235));
+        g.drawString("6. In-Window Search & Two Recursive Functions:", cardX + 45, cardY + 382);
+        g.setColor(new Color(170, 180, 195));
+        g.drawString("   • Linear Search (O(N)) with full visual step trace in window.", cardX + 60, cardY + 400);
+        g.drawString("   • Recursive Binary Search (O(log N)) by score on sorted array.", cardX + 60, cardY + 418);
+        g.drawString("   • Recursion: Call-stack countdown (3->0) + RecursionMath scoring bonus.", cardX + 60, cardY + 436);
+
         drawButton(g, howBackBtn, "⌂ BACK TO MENU",
                 new Color(52, 73, 94), new Color(70, 95, 120), Color.WHITE, 15);
     }
 
-    /**
-     * Leaderboard Screen with Bubble Sort list and Linear Search button.
-     */
     private void drawLeaderboardScreen(Graphics g) {
         g.setColor(new Color(15, 17, 22));
         g.fillRect(0, 0, TOTAL_WIDTH, TOTAL_HEIGHT);
 
-        int cardW = 560;
-        int cardH = 550;
+        int cardW = 600;
+        int cardH = 560;
         int cardX = (TOTAL_WIDTH - cardW) / 2;
-        int cardY = 60;
+        int cardY = 55;
 
         g.setColor(new Color(24, 28, 38));
         g.fillRoundRect(cardX, cardY, cardW, cardH, 20, 20);
         g.setColor(new Color(50, 60, 80));
         g.drawRoundRect(cardX, cardY, cardW, cardH, 20, 20);
 
-        // Title
         g.setColor(new Color(241, 196, 15));
         g.setFont(new Font("SansSerif", Font.BOLD, 30));
         String title = "🏆 LEADERBOARD";
         int tw = g.getFontMetrics().stringWidth(title);
         g.drawString(title, cardX + (cardW - tw) / 2, cardY + 45);
 
-        // Subtitle
         g.setColor(new Color(170, 180, 195));
         g.setFont(new Font("SansSerif", Font.PLAIN, 14));
-        String sub = "Sorted with Bubble Sort Algorithm (Descending)";
+        String sub = "Sorted Plain Array using Bubble Sort (Descending)";
         int sw = g.getFontMetrics().stringWidth(sub);
         g.drawString(sub, cardX + (cardW - sw) / 2, cardY + 72);
 
-        // Divider
         g.setColor(new Color(45, 55, 75));
         g.drawLine(cardX + 30, cardY + 85, cardX + cardW - 30, cardY + 85);
 
-        // Scores List
-        List<LeaderboardEntry> entries = leaderboard.getEntries();
+        LeaderboardEntry[] entries = leaderboard.getEntries();
         int entryY = cardY + 125;
         g.setFont(new Font("SansSerif", Font.BOLD, 17));
 
-        for (int i = 0; i < Math.min(entries.size(), 7); i++) {
-            LeaderboardEntry entry = entries.get(i);
+        for (int i = 0; i < Math.min(entries.length, 7); i++) {
+            LeaderboardEntry entry = entries[i];
 
-            // Badge / colors
             if (i == 0) g.setColor(new Color(241, 196, 15)); // Gold
             else if (i == 1) g.setColor(new Color(189, 195, 199)); // Silver
             else if (i == 2) g.setColor(new Color(205, 127, 50)); // Bronze
@@ -1228,17 +1210,116 @@ public class GamePanel extends JPanel implements ActionListener {
             entryY += 44;
         }
 
-        // Action Buttons
-        drawButton(g, lbSearchBtn, "🔍 SEARCH PLAYER",
-                new Color(41, 128, 185), new Color(52, 152, 219), Color.WHITE, 14);
+        // Action Buttons: Linear Search, Recursive Binary Search, Back
+        drawButton(g, lbSearchBtn, "🔍 LINEAR SEARCH",
+                new Color(41, 128, 185), new Color(52, 152, 219), Color.WHITE, 13);
 
-        drawButton(g, lbBackBtn, "⌂ BACK TO MENU",
+        drawButton(g, lbBinSearchBtn, "⚡ BINARY SEARCH (RECURSIVE)",
+                new Color(142, 68, 173), new Color(155, 89, 182), Color.WHITE, 12);
+
+        drawButton(g, lbBackBtn, "⌂ BACK",
                 new Color(52, 73, 94), new Color(70, 95, 120), Color.WHITE, 14);
     }
 
     /**
-     * Recursive Countdown screen overlay (3 -> 2 -> 1 -> GO!).
+     * Screen: In-Window Search Result & Step Trace Display
+     * Solves examiner requirement: renders step trace directly on screen for demo video!
      */
+    private void drawSearchDisplayScreen(Graphics g) {
+        g.setColor(new Color(15, 17, 22));
+        g.fillRect(0, 0, TOTAL_WIDTH, TOTAL_HEIGHT);
+
+        int cardW = 620;
+        int cardH = 550;
+        int cardX = (TOTAL_WIDTH - cardW) / 2;
+        int cardY = 60;
+
+        g.setColor(new Color(24, 28, 38));
+        g.fillRoundRect(cardX, cardY, cardW, cardH, 20, 20);
+        g.setColor(new Color(50, 60, 80));
+        g.drawRoundRect(cardX, cardY, cardW, cardH, 20, 20);
+
+        String[] traceLines;
+        boolean found;
+        String headerTitle;
+        String subTitle;
+
+        if (activeLinearResult != null) {
+            headerTitle = "🔍 LINEAR SEARCH RESULTS & STEP TRACE";
+            subTitle = "Algorithm: Linear Search O(N) Sequential Traversal";
+            traceLines = activeLinearResult.trace;
+            found = activeLinearResult.found;
+        } else if (activeBinaryResult != null) {
+            headerTitle = "⚡ RECURSIVE BINARY SEARCH STEP TRACE";
+            subTitle = "Algorithm: Recursive Binary Search O(log N) Divide & Conquer";
+            traceLines = activeBinaryResult.trace;
+            found = activeBinaryResult.found;
+        } else {
+            return;
+        }
+
+        // Title
+        g.setColor(new Color(52, 152, 219));
+        g.setFont(new Font("SansSerif", Font.BOLD, 22));
+        int tw = g.getFontMetrics().stringWidth(headerTitle);
+        g.drawString(headerTitle, cardX + (cardW - tw) / 2, cardY + 45);
+
+        // Subtitle
+        g.setColor(new Color(170, 180, 195));
+        g.setFont(new Font("SansSerif", Font.PLAIN, 13));
+        int sw = g.getFontMetrics().stringWidth(subTitle);
+        g.drawString(subTitle, cardX + (cardW - sw) / 2, cardY + 70);
+
+        g.setColor(new Color(45, 55, 75));
+        g.drawLine(cardX + 30, cardY + 85, cardX + cardW - 30, cardY + 85);
+
+        // Match Status Banner
+        g.setFont(new Font("SansSerif", Font.BOLD, 17));
+        if (found) {
+            g.setColor(new Color(46, 204, 113));
+            String matchStr = "✓ MATCH FOUND IN LEADERBOARD";
+            g.drawString(matchStr, cardX + 40, cardY + 115);
+        } else {
+            g.setColor(new Color(231, 76, 60));
+            String failStr = "✕ NOT FOUND ON LEADERBOARD";
+            g.drawString(failStr, cardX + 40, cardY + 115);
+        }
+
+        // Step Trace Card Box
+        g.setColor(new Color(16, 18, 24));
+        g.fillRoundRect(cardX + 35, cardY + 135, cardW - 70, 310, 12, 12);
+        g.setColor(new Color(42, 50, 65));
+        g.drawRoundRect(cardX + 35, cardY + 135, cardW - 70, 310, 12, 12);
+
+        // Step lines
+        g.setFont(new Font("Monospaced", Font.PLAIN, 13));
+        g.setColor(new Color(220, 225, 235));
+        int traceY = cardY + 165;
+
+        for (int i = 0; i < Math.min(traceLines.length, 9); i++) {
+            String line = traceLines[i];
+            if (line.contains("MATCH FOUND")) {
+                g.setColor(new Color(46, 204, 113));
+            } else if (line.contains("NOT FOUND")) {
+                g.setColor(new Color(231, 76, 60));
+            } else {
+                g.setColor(new Color(200, 210, 225));
+            }
+            g.drawString(line, cardX + 50, traceY);
+            traceY += 28;
+        }
+
+        // Footer step count
+        g.setFont(new Font("SansSerif", Font.ITALIC, 13));
+        g.setColor(new Color(241, 196, 15));
+        String stepSummary = "Total Algorithmic Comparisons Executed: " + (traceLines.length - 1);
+        g.drawString(stepSummary, cardX + 40, cardY + 475);
+
+        // Close Button
+        drawButton(g, searchCloseBtn, "✓ CLOSE SEARCH TRACE",
+                new Color(39, 174, 96), new Color(46, 204, 113), Color.WHITE, 14);
+    }
+
     private void drawCountdownOverlay(Graphics g) {
         g.setColor(new Color(0, 0, 0, 180));
         g.fillRect(0, 0, TOTAL_WIDTH, TOTAL_HEIGHT);
@@ -1250,14 +1331,12 @@ public class GamePanel extends JPanel implements ActionListener {
         int cw = g.getFontMetrics().stringWidth(countdownText);
         g.drawString(countdownText, (TOTAL_WIDTH - cw) / 2, TOTAL_HEIGHT / 2 + 10);
 
-        // Player Name
         g.setFont(new Font("SansSerif", Font.BOLD, 22));
         g.setColor(new Color(155, 89, 182));
         String pName = "Player: " + ((currentProfile != null) ? currentProfile.getName() : "Player");
         int pw = g.getFontMetrics().stringWidth(pName);
         g.drawString(pName, (TOTAL_WIDTH - pw) / 2, TOTAL_HEIGHT / 2 - 90);
 
-        // DSA Explanation text
         g.setFont(new Font("SansSerif", Font.BOLD, 17));
         g.setColor(new Color(220, 225, 235));
         String dsaNote = "Algorithm: Recursive Countdown -> countdown(" + countdownText + ")";
@@ -1271,9 +1350,6 @@ public class GamePanel extends JPanel implements ActionListener {
         g.drawString(stackInfo, (TOTAL_WIDTH - siw) / 2, TOTAL_HEIGHT / 2 + 115);
     }
 
-    /**
-     * Pause overlay.
-     */
     private void drawPauseOverlay(Graphics g) {
         g.setColor(new Color(0, 0, 0, 150));
         g.fillRect(0, 0, TOTAL_WIDTH, TOTAL_HEIGHT);
@@ -1291,21 +1367,15 @@ public class GamePanel extends JPanel implements ActionListener {
         g.drawString(sub, (TOTAL_WIDTH - sw) / 2, TOTAL_HEIGHT / 2 + 25);
     }
 
-    /**
-     * Helper to render polished interactive buttons with hover animation.
-     */
     private void drawButton(Graphics g, Rectangle r, String text, Color baseColor, Color hoverColor, Color textColor, int fontSize) {
         boolean isHovered = (mousePoint != null && r.contains(mousePoint));
 
-        // Background
         g.setColor(isHovered ? hoverColor : baseColor);
         g.fillRoundRect(r.x, r.y, r.width, r.height, 12, 12);
 
-        // Border highlight
         g.setColor(isHovered ? Color.WHITE : new Color(255, 255, 255, 40));
         g.drawRoundRect(r.x, r.y, r.width, r.height, 12, 12);
 
-        // Text
         g.setColor(textColor);
         g.setFont(new Font("SansSerif", Font.BOLD, fontSize));
         FontMetrics fm = g.getFontMetrics();

@@ -1,26 +1,47 @@
-import java.util.ArrayList;
-import java.util.List;
-
 /**
- * Manages game high scores, Bubble Sort sorting, and Linear Search lookups.
+ * Manages game high scores using a plain array data structure.
+ * 
+ * DSA Features:
+ *   - Plain Array Data Structure (LeaderboardEntry[])
+ *   - Bubble Sort descending re-ranking
+ *   - Linear Search by player name with step trace
+ *   - Recursive Binary Search by score
  */
 public class Leaderboard {
 
-    private List<LeaderboardEntry> entries;
+    private LeaderboardEntry[] entries;
+    private int count;
+    private static final int INITIAL_CAPACITY = 20;
 
     public Leaderboard() {
-        entries = new ArrayList<>();
+        this.entries = new LeaderboardEntry[INITIAL_CAPACITY];
+        this.count = 0;
         loadInitialData();
     }
 
     /**
-     * Loads the initial sample dataset.
+     * Loads the initial sample dataset into the plain array.
      */
     private void loadInitialData() {
-        entries.add(new LeaderboardEntry("Damidu", 850));
-        entries.add(new LeaderboardEntry("Kasun", 400));
-        entries.add(new LeaderboardEntry("Amal", 950));
-        entries.add(new LeaderboardEntry("Nimal", 650));
+        addRawEntry(new LeaderboardEntry("Damidu", 850));
+        addRawEntry(new LeaderboardEntry("Kasun", 400));
+        addRawEntry(new LeaderboardEntry("Amal", 950));
+        addRawEntry(new LeaderboardEntry("Nimal", 650));
+    }
+
+    private void addRawEntry(LeaderboardEntry entry) {
+        if (count >= entries.length) {
+            resizeArray();
+        }
+        entries[count++] = entry;
+    }
+
+    private void resizeArray() {
+        LeaderboardEntry[] newArr = new LeaderboardEntry[entries.length * 2];
+        for (int i = 0; i < count; i++) {
+            newArr[i] = entries[i];
+        }
+        entries = newArr;
     }
 
     /**
@@ -30,67 +51,75 @@ public class Leaderboard {
         System.out.println("===================================================");
         System.out.println(" Leaderboard (Before Bubble Sort)");
         System.out.println("===================================================");
-        for (LeaderboardEntry entry : entries) {
-            System.out.println(entry);
+        for (int i = 0; i < count; i++) {
+            System.out.println(entries[i]);
         }
 
-        // Apply Bubble Sort
-        BubbleSort.sort(entries);
+        // Apply Bubble Sort on Plain Array
+        BubbleSort.sort(entries, count);
 
         System.out.println("\nAfter Bubble Sort (Descending - Highest First):");
         System.out.println("===================================================");
         System.out.println(" Leaderboard");
         System.out.println("===================================================");
-        for (LeaderboardEntry entry : entries) {
-            System.out.println(entry);
+        for (int i = 0; i < count; i++) {
+            System.out.println(entries[i]);
         }
         System.out.println("===================================================\n");
     }
 
     /**
-     * Demonstrates Linear Search in terminal.
+     * Demonstrates Linear Search and Recursive Binary Search in terminal.
      */
-    public void demonstrateLinearSearch() {
+    public void demonstrateSearchAlgorithms() {
         System.out.println("===================================================");
-        System.out.println(" Linear Search Demonstration");
+        System.out.println(" 1. Linear Search Demonstration");
         System.out.println("===================================================");
-        System.out.println("Search Query: 'Damidu'");
+        LinearSearch.SearchResult linResult = LinearSearch.searchByName(entries, count, "Damidu");
+        if (linResult.found) {
+            System.out.println("Result: Player: " + linResult.entry.getName() + " | Score: " + linResult.entry.getScore());
+        }
 
-        LeaderboardEntry result = LinearSearch.searchByName(entries, "Damidu");
-
-        System.out.println("\nResult:");
-        if (result != null) {
-            System.out.println("Player: " + result.getName());
-            System.out.println("Score:  " + result.getScore());
-        } else {
-            System.out.println("Player not found.");
+        System.out.println("\n===================================================");
+        System.out.println(" 2. Recursive Binary Search Demonstration");
+        System.out.println("===================================================");
+        BinarySearch.SearchResult binResult = BinarySearch.searchByScore(entries, count, 850);
+        for (String step : binResult.trace) {
+            System.out.println(step);
         }
         System.out.println("===================================================\n");
     }
 
     /**
-     * Searches for a player using Linear Search DSA.
+     * Searches for a player using Linear Search DSA on the plain array.
      */
-    public LeaderboardEntry searchPlayer(String name) {
-        return LinearSearch.searchByName(entries, name);
+    public LinearSearch.SearchResult searchPlayer(String name) {
+        return LinearSearch.searchByName(entries, count, name);
     }
 
     /**
-     * Records a score for a player. If player exists and score is higher, updates it.
-     * If player does not exist, adds the new player and score.
-     * Re-sorts the entire leaderboard using Bubble Sort DSA.
+     * Searches for a score using Recursive Binary Search on the sorted array.
+     */
+    public BinarySearch.SearchResult searchByScore(int targetScore) {
+        return BinarySearch.searchByScore(entries, count, targetScore);
+    }
+
+    /**
+     * Records a score for a player.
+     * Updates personal record if higher, or adds new record.
+     * Re-sorts the plain array using Bubble Sort DSA.
      */
     public void recordScore(String name, int score) {
         if (name == null || name.trim().isEmpty()) {
             name = "Player";
         }
-        
+
         boolean found = false;
-        for (LeaderboardEntry entry : entries) {
-            if (entry.getName().equalsIgnoreCase(name.trim())) {
+        for (int i = 0; i < count; i++) {
+            if (entries[i].getName().equalsIgnoreCase(name.trim())) {
                 found = true;
-                if (score > entry.getScore()) {
-                    entry.setScore(score);
+                if (score > entries[i].getScore()) {
+                    entries[i].setScore(score);
                     System.out.println(">> Leaderboard: Updated " + name + "'s high score to " + score);
                 }
                 break;
@@ -98,22 +127,26 @@ public class Leaderboard {
         }
 
         if (!found) {
-            entries.add(new LeaderboardEntry(name.trim(), score));
+            addRawEntry(new LeaderboardEntry(name.trim(), score));
             System.out.println(">> Leaderboard: Added new player " + name + " with score " + score);
         }
 
-        // Sort via Bubble Sort DSA
-        BubbleSort.sort(entries);
+        // Re-sort via Bubble Sort DSA
+        BubbleSort.sort(entries, count);
     }
 
     /**
-     * Adds a new score and re-sorts the leaderboard using Bubble Sort.
+     * Returns an active plain array copy of the leaderboard entries.
      */
-    public void addScore(String name, int score) {
-        recordScore(name, score);
+    public LeaderboardEntry[] getEntries() {
+        LeaderboardEntry[] result = new LeaderboardEntry[count];
+        for (int i = 0; i < count; i++) {
+            result[i] = entries[i];
+        }
+        return result;
     }
 
-    public List<LeaderboardEntry> getEntries() {
-        return entries;
+    public int getCount() {
+        return count;
     }
 }

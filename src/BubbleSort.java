@@ -1,5 +1,3 @@
-import java.util.List;
-
 /**
  * Bubble Sort Algorithm Implementation.
  * 
@@ -9,11 +7,13 @@ import java.util.List;
  *   - Average / Worst Case: O(N^2)
  * Space Complexity: O(1) in-place
  * Order: Descending (highest score to lowest score)
+ * 
+ * Operates purely on plain Java arrays without relying on Java Collection Framework.
  */
 public class BubbleSort {
 
     /**
-     * Sorts an integer array of scores in descending order.
+     * Sorts a primitive integer array of scores in descending order.
      * 
      * @param scores array of scores to sort in-place
      */
@@ -26,7 +26,6 @@ public class BubbleSort {
             boolean swapped = false;
 
             for (int j = 0; j < scores.length - i - 1; j++) {
-                // Descending comparison: if left element is less than right, swap
                 if (scores[j] < scores[j + 1]) {
                     int temp = scores[j];
                     scores[j] = scores[j + 1];
@@ -35,7 +34,7 @@ public class BubbleSort {
                 }
             }
 
-            // Early exit optimization if array is already sorted
+            // Early exit optimization
             if (!swapped) {
                 break;
             }
@@ -43,19 +42,20 @@ public class BubbleSort {
     }
 
     /**
-     * Sorts an array of LeaderboardEntry objects in descending order of score.
+     * Sorts a plain array of LeaderboardEntry objects up to a specific element count.
      * 
-     * @param entries array of LeaderboardEntry items to sort in-place
+     * @param entries array of LeaderboardEntry items
+     * @param count number of active entries in the array
      */
-    public static void sort(LeaderboardEntry[] entries) {
-        if (entries == null || entries.length <= 1) {
+    public static void sort(LeaderboardEntry[] entries, int count) {
+        if (entries == null || count <= 1) {
             return;
         }
 
-        for (int i = 0; i < entries.length - 1; i++) {
+        for (int i = 0; i < count - 1; i++) {
             boolean swapped = false;
 
-            for (int j = 0; j < entries.length - i - 1; j++) {
+            for (int j = 0; j < count - i - 1; j++) {
                 if (entries[j].getScore() < entries[j + 1].getScore()) {
                     LeaderboardEntry temp = entries[j];
                     entries[j] = entries[j + 1];
@@ -71,27 +71,11 @@ public class BubbleSort {
     }
 
     /**
-     * Sorts a List of LeaderboardEntry objects using Bubble Sort.
+     * Convenience method to sort entire LeaderboardEntry array.
      */
-    public static void sort(List<LeaderboardEntry> list) {
-        if (list == null || list.size() <= 1) {
-            return;
-        }
-
-        int n = list.size();
-        for (int i = 0; i < n - 1; i++) {
-            boolean swapped = false;
-            for (int j = 0; j < n - i - 1; j++) {
-                if (list.get(j).getScore() < list.get(j + 1).getScore()) {
-                    LeaderboardEntry temp = list.get(j);
-                    list.set(j, list.get(j + 1));
-                    list.set(j + 1, temp);
-                    swapped = true;
-                }
-            }
-            if (!swapped) {
-                break;
-            }
+    public static void sort(LeaderboardEntry[] entries) {
+        if (entries != null) {
+            sort(entries, entries.length);
         }
     }
 }
